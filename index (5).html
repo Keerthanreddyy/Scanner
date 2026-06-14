@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stock Screener</title>
+<style>
+  /* ── Design tokens ──────────────────────────────────────────────────────── */
+  :root {
+    --bg:        #0a0e1a;
+    --surface:   #111827;
+    --surface2:  #1a2235;
+    --border:    #1e2d45;
+    --accent:    #00d4ff;
+    --accent2:   #7c3aed;
+    --green:     #10b981;
+    --red:       #ef4444;
+    --amber:     #f59e0b;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --font-mono: "JetBrains Mono", "Fira Mono", "Cascadia Code", monospace;
+    --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  }
+
+  /* ── Reset ──────────────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  /* ── Layout ─────────────────────────────────────────────────────────────── */
+  .app {
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    min-height: 100vh;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────────── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 1.25rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .logo-icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem;
+  }
+  .logo-text {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  .logo-text span { color: var(--accent); }
+  .header-meta {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+  }
+
+  /* ── Control bar ─────────────────────────────────────────────────────────── */
+  .controls {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .control-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .control-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .market-toggle {
+    display: flex;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .market-btn {
+    padding: 0.4rem 1.1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .market-btn.active {
+    background: var(--accent);
+    color: #000;
+  }
+  .market-btn:hover:not(.active) { color: var(--text); }
+
+  .badge {
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.15rem 0.5rem;
+    color: var(--muted);
+  }
+
+  .btn-scan {
+    margin-left: auto;
+    padding: 0.5rem 1.6rem;
+    background: linear-gradient(135deg, var(--accent), #0099cc);
+    color: #000;
+    font-weight: 700;
+    font-size: 0.9rem;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .btn-scan:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+  .btn-scan:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .btn-scan .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(0,0,0,0.3);
+    border-top-color: #000;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+  .btn-scan.loading .spinner { display: block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Progress bar ────────────────────────────────────────────────────────── */
+  .progress-bar-wrap {
+    height: 3px;
+    background: var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    transition: width 0.3s ease;
+    width: 0%;
+  }
+
+  /* ── Main content ────────────────────────────────────────────────────────── */
+  main { padding: 1.5rem 2rem 3rem; max-width: 1400px; margin: 0 auto; width: 100%; }
+
+  /* ── Stats strip ─────────────────────────────────────────────────────────── */
+  .stats-strip {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem 1.25rem;
+    flex: 1;
+    min-width: 140px;
+  }
+  .stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 0.3rem;
+  }
+  .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--text);
+  }
+  .stat-value.accent { color: var(--accent); }
+  .stat-value.green  { color: var(--green); }
+  .stat-value.amber  { color: var(--amber); }
+
+  /* ── Filters legend ──────────────────────────────────────────────────────── */
+  .filters-legend {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .filter-pill {
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    padding: 0.3rem 0.9rem;
+    color: var(--muted);
+  }
+  .filter-pill strong { color: var(--accent); }
+
+  /* ── Results table ───────────────────────────────────────────────────────── */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .table-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .table-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+  }
+  .result-count {
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    color: var(--accent);
+    background: rgba(0,212,255,0.08);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 4px;
+    padding: 0.15rem 0.6rem;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.87rem;
+  }
+  thead { background: rgba(0,0,0,0.3); }
+  thead th {
+    text-align: left;
+    padding: 0.65rem 1.25rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+  thead th:hover { color: var(--text); }
+  thead th .sort-arrow { margin-left: 4px; opacity: 0.4; }
+  thead th.sorted .sort-arrow { opacity: 1; color: var(--accent); }
+
+  tbody tr {
+    border-top: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  tbody tr:hover { background: rgba(255,255,255,0.02); }
+  tbody tr.new-row { animation: rowIn 0.4s ease; }
+  @keyframes rowIn {
+    from { opacity: 0; transform: translateY(-6px); background: rgba(0,212,255,0.05); }
+    to   { opacity: 1; transform: translateY(0);    background: transparent; }
+  }
+
+  td {
+    padding: 0.75rem 1.25rem;
+    vertical-align: middle;
+  }
+
+  .rank-num {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--muted);
+    width: 32px;
+    text-align: center;
+  }
+  .rank-num.top3 { color: var(--amber); }
+
+  .ticker-cell {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--accent);
+    letter-spacing: 0.03em;
+  }
+  .ticker-cell .suffix { color: var(--muted); font-weight: 400; font-size: 0.75rem; }
+
+  .price-cell {
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+  .currency { color: var(--muted); font-size: 0.75rem; margin-right: 2px; }
+
+  .metric-cell {
+    font-family: var(--font-mono);
+  }
+
+  .bar-cell { min-width: 120px; }
+  .bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .mini-bar-bg {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    flex: 1;
+    overflow: hidden;
+  }
+  .mini-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.4s ease;
+  }
+  .fill-accent  { background: var(--accent); }
+  .fill-green   { background: var(--green); }
+  .fill-amber   { background: var(--amber); }
+
+  .score-pill {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.55rem;
+    border-radius: 99px;
+    background: rgba(124,58,237,0.15);
+    border: 1px solid rgba(124,58,237,0.3);
+    color: #a78bfa;
+  }
+
+  /* ── Empty / loading states ──────────────────────────────────────────────── */
+  .empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+  }
+  .empty-icon { font-size: 3rem; margin-bottom: 1rem; opacity: 0.3; }
+  .empty-title { font-size: 1.1rem; font-weight: 600; color: var(--muted); }
+  .empty-sub { font-size: 0.85rem; color: var(--muted); margin-top: 0.4rem; opacity: 0.7; }
+
+  /* ── Status log ──────────────────────────────────────────────────────────── */
+  .log-section { margin-top: 1.5rem; }
+  .log-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+    max-height: 140px;
+    overflow-y: auto;
+    line-height: 1.8;
+  }
+  .log-line { display: block; }
+  .log-line.info { color: var(--muted); }
+  .log-line.pass { color: var(--green); }
+  .log-line.warn { color: var(--amber); }
+  .log-line.err  { color: var(--red); }
+  .log-time { color: rgba(100,116,139,0.6); margin-right: 0.5rem; }
+
+  /* ── Scrollbar ───────────────────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* ── Responsive ──────────────────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    header, .controls, main { padding-left: 1rem; padding-right: 1rem; }
+    .btn-scan { margin-left: 0; width: 100%; justify-content: center; }
+    td, th { padding: 0.6rem 0.75rem; }
+    .bar-cell { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">📈</div>
+      <div class="logo-text">Stock<span>Screen</span></div>
+    </div>
+    <div class="header-meta" id="headerMeta">Ready — select a market and run scan</div>
+  </header>
+
+  <!-- ── Controls ────────────────────────────────────────────────────────── -->
+  <div class="controls">
+    <div class="control-group">
+      <span class="control-label">Market</span>
+      <div class="market-toggle">
+        <button class="market-btn" id="btnNSE" onclick="selectMarket('nse')">🇮🇳 NSE</button>
+        <button class="market-btn" id="btnNYSE" onclick="selectMarket('nyse')">🇺🇸 NYSE</button>
+      </div>
+    </div>
+    <div class="control-group">
+      <span class="badge" id="tickerCountBadge">— tickers</span>
+    </div>
+    <button class="btn-scan" id="btnScan" onclick="startScan()" disabled>
+      <span class="spinner"></span>
+      <span id="btnScanText">▶  Run Scan</span>
+    </button>
+  </div>
+
+  <!-- ── Progress bar ─────────────────────────────────────────────────────── -->
+  <div class="progress-bar-wrap">
+    <div class="progress-bar-fill" id="progressFill"></div>
+  </div>
+
+  <!-- ── Main ─────────────────────────────────────────────────────────────── -->
+  <main>
+    <!-- Stats strip -->
+    <div class="stats-strip">
+      <div class="stat-card">
+        <div class="stat-label">Scanned</div>
+        <div class="stat-value accent" id="statScanned">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Passed</div>
+        <div class="stat-value green" id="statPassed">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Market</div>
+        <div class="stat-value" id="statMarket">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Last Scan</div>
+        <div class="stat-value amber" id="statTime">—</div>
+      </div>
+    </div>
+
+    <!-- Filters legend -->
+    <div class="filters-legend">
+      <span class="filter-pill">P/E &lt; <strong>20</strong></span>
+      <span class="filter-pill">Volume &gt; <strong>2×</strong> 20-day avg</span>
+      <span class="filter-pill">RSI(14) &gt; <strong>50</strong></span>
+      <span class="filter-pill">Ranked by <strong>composite score</strong></span>
+    </div>
+
+    <!-- Results table -->
+    <div class="table-wrap">
+      <div class="table-header-row">
+        <span class="table-title">Screener Results</span>
+        <span class="result-count" id="resultCount">0 matches</span>
+      </div>
+
+      <div id="resultsBody">
+        <div class="empty-state">
+          <div class="empty-icon">🔍</div>
+          <div class="empty-title">No scan running</div>
+          <div class="empty-sub">Choose a market and click Run Scan</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="log-section">
+      <div class="log-box" id="logBox">
+        <span class="log-line info"><span class="log-time">--:--:--</span>Screener ready.</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ── State ───────────────────────────────────────────────────────────────── */
+let selectedMarket = null;
+let currentResults = [];
+let sortKey   = "score";
+let sortAsc   = false;
+let eventSource = null;
+let scanTotal = 0;
+let scanDone  = 0;
+
+/* ── Market selection ────────────────────────────────────────────────────── */
+function selectMarket(market) {
+  if (eventSource) return; // scan in progress
+  selectedMarket = market;
+  document.getElementById("btnNSE").classList.toggle("active",  market === "nse");
+  document.getElementById("btnNYSE").classList.toggle("active", market === "nyse");
+  document.getElementById("btnScan").disabled = false;
+
+  fetch(`/api/tickers/${market}`)
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById("tickerCountBadge").textContent = `${d.count} tickers`;
+    });
+}
+
+/* ── Scan ────────────────────────────────────────────────────────────────── */
+async function startScan() {
+  if (!selectedMarket) return;
+  if (eventSource) { eventSource.close(); eventSource = null; }
+
+  currentResults = [];
+  scanDone = 0;
+  renderTable();
+  setProgress(0);
+  setScanState(true);
+  logLine(`Starting ${selectedMarket.toUpperCase()} scan…`, "info");
+  document.getElementById("statMarket").textContent = selectedMarket.toUpperCase();
+  document.getElementById("statPassed").textContent = "0";
+  document.getElementById("statScanned").textContent = "0";
+
+  const res = await fetch("/api/scan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ market: selectedMarket }),
+  });
+  const { job_id, total } = await res.json();
+  scanTotal = total;
+  document.getElementById("statScanned").textContent = `0 / ${total}`;
+
+  eventSource = new EventSource(`/api/stream/${job_id}`);
+
+  eventSource.onmessage = (e) => {
+    const evt = JSON.parse(e.data);
+    handleEvent(evt);
+  };
+  eventSource.onerror = () => {
+    logLine("Connection lost.", "err");
+    setScanState(false);
+    eventSource.close();
+    eventSource = null;
+  };
+}
+
+function handleEvent(evt) {
+  if (evt.type === "progress") {
+    scanDone = evt.done;
+    setProgress(evt.done / evt.total);
+    document.getElementById("statScanned").textContent = `${evt.done} / ${evt.total}`;
+
+  } else if (evt.type === "result") {
+    const r = evt.data;
+    logLine(`✓ ${r.ticker}  PE=${r.pe}  Vol×${r.vol_ratio}  RSI=${r.rsi}`, "pass");
+    // Rebuild from ranked list
+    currentResults = evt.ranked;
+    document.getElementById("statPassed").textContent = currentResults.length;
+    document.getElementById("resultCount").textContent = `${currentResults.length} match${currentResults.length !== 1 ? "es" : ""}`;
+    renderTable();
+
+  } else if (evt.type === "done") {
+    setProgress(1);
+    const t = new Date().toLocaleTimeString();
+    document.getElementById("statTime").textContent = t;
+    document.getElementById("headerMeta").textContent = `Scan complete — ${t}`;
+    logLine(`Scan complete. ${evt.total_passed} stock(s) passed all filters.`, "info");
+    setScanState(false);
+    eventSource.close();
+    eventSource = null;
+
+  } else if (evt.type === "error") {
+    logLine(`Error: ${evt.message}`, "err");
+    setScanState(false);
+    eventSource.close();
+    eventSource = null;
+  }
+}
+
+/* ── Table rendering ─────────────────────────────────────────────────────── */
+const COLUMNS = [
+  { key: "rank",      label: "#",          sortable: false },
+  { key: "ticker",    label: "Ticker",     sortable: true  },
+  { key: "price",     label: "Price",      sortable: true  },
+  { key: "pe",        label: "P/E",        sortable: true  },
+  { key: "vol_ratio", label: "Vol Ratio",  sortable: true  },
+  { key: "rsi",       label: "RSI (14)",   sortable: true  },
+  { key: "score",     label: "Score",      sortable: true  },
+];
+
+function sortBy(key) {
+  if (sortKey === key) { sortAsc = !sortAsc; }
+  else { sortKey = key; sortAsc = false; }
+  currentResults = [...currentResults].sort((a, b) => {
+    const va = a[key], vb = b[key];
+    if (typeof va === "string") return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return sortAsc ? va - vb : vb - va;
+  });
+  // Re-assign rank numbers after sort
+  currentResults.forEach((r, i) => r.rank = i + 1);
+  renderTable();
+}
+
+function renderTable() {
+  const body = document.getElementById("resultsBody");
+
+  if (currentResults.length === 0) {
+    body.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⏳</div>
+        <div class="empty-title">Scanning…</div>
+        <div class="empty-sub">Results will appear as stocks pass filters</div>
+      </div>`;
+    return;
+  }
+
+  const isNSE  = selectedMarket === "nse";
+  const symbol = isNSE ? "₹" : "$";
+  const maxVol = Math.max(...currentResults.map(r => r.vol_ratio), 1);
+  const maxRSI = 100;
+
+  const thead = `
+    <table>
+      <thead>
+        <tr>
+          ${COLUMNS.map(c => `
+            <th ${c.sortable ? `onclick="sortBy('${c.key}')"` : ""} class="${c.sortable && sortKey === c.key ? "sorted" : ""}">
+              ${c.label}
+              ${c.sortable ? `<span class="sort-arrow">${sortKey === c.key ? (sortAsc ? "↑" : "↓") : "↕"}</span>` : ""}
+            </th>`).join("")}
+        </tr>
+      </thead>`;
+
+  const rows = currentResults.map((r, idx) => {
+    const rankClass = idx < 3 ? "top3" : "";
+    const ticker    = isNSE ? r.ticker.replace(".NS", "") : r.ticker;
+    const suffix    = isNSE ? '<span class="suffix">.NS</span>' : "";
+    const price     = r.price != null ? `<span class="currency">${symbol}</span>${r.price.toLocaleString()}` : "—";
+    const volPct    = Math.min((r.vol_ratio / maxVol) * 100, 100);
+    const rsiPct    = Math.min(r.rsi, 100);
+
+    return `
+      <tr class="new-row">
+        <td><div class="rank-num ${rankClass}">${r.rank}</div></td>
+        <td><span class="ticker-cell">${ticker}${suffix}</span></td>
+        <td><span class="price-cell">${price}</span></td>
+        <td><span class="metric-cell">${r.pe}</span></td>
+        <td class="bar-cell">
+          <div class="bar-wrap">
+            <span class="metric-cell">${r.vol_ratio}×</span>
+            <div class="mini-bar-bg"><div class="mini-bar-fill fill-amber" style="width:${volPct}%"></div></div>
+          </div>
+        </td>
+        <td class="bar-cell">
+          <div class="bar-wrap">
+            <span class="metric-cell">${r.rsi}</span>
+            <div class="mini-bar-bg"><div class="mini-bar-fill fill-green" style="width:${rsiPct}%"></div></div>
+          </div>
+        </td>
+        <td><span class="score-pill">${r.score}</span></td>
+      </tr>`;
+  }).join("");
+
+  body.innerHTML = thead + `<tbody>${rows}</tbody></table>`;
+}
+
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
+function setProgress(pct) {
+  document.getElementById("progressFill").style.width = `${Math.round(pct * 100)}%`;
+}
+
+function setScanState(running) {
+  const btn  = document.getElementById("btnScan");
+  const text = document.getElementById("btnScanText");
+  btn.disabled = running;
+  btn.classList.toggle("loading", running);
+  text.textContent = running ? "Scanning…" : "▶  Run Scan";
+  document.getElementById("btnNSE").disabled  = running;
+  document.getElementById("btnNYSE").disabled = running;
+  if (!running) document.getElementById("headerMeta").textContent =
+    currentResults.length ? `${currentResults.length} stocks passed all filters` : "Scan complete — no stocks passed";
+}
+
+function logLine(msg, type = "info") {
+  const box  = document.getElementById("logBox");
+  const time = new Date().toLocaleTimeString();
+  const span = document.createElement("span");
+  span.className = `log-line ${type}`;
+  span.innerHTML = `<span class="log-time">${time}</span>${escHtml(msg)}`;
+  box.appendChild(span);
+  box.scrollTop = box.scrollHeight;
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+</script>
+</body>
+</html>
